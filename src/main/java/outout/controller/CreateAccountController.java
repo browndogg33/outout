@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 import outout.model.User;
+import outout.service.AccountService;
 import outout.view.AccountCreationResult;
 import outout.view.AccountCredentials;
 
@@ -25,49 +26,49 @@ import java.util.List;
 @RequestMapping("/account/create")
 public class CreateAccountController {
 
-    @PersistenceContext
-    private EntityManager entityManager;
 
     @Autowired
-    private PasswordEncoder encoder;
+    private AccountService accountService;
 
     @RequestMapping(method = RequestMethod.POST)
     @ResponseBody
     @Transactional
     public ResponseEntity<AccountCreationResult> createAccount(@RequestBody AccountCredentials ac) {
-        ResponseEntity<AccountCreationResult> r;
-        String u = ac.getUsername();
-        String p = ac.getPassword();
-        Query query = entityManager.createQuery("select count(u) from User u where u.username = :username");
-        query.setParameter("username", ac.getUsername());
-        Number count = (Number) query.getSingleResult();
-        if(!StringUtils.isEmpty(u) && u.length() >= 5
-                && !StringUtils.isEmpty(p) && p.length() >= 10
-                && count.intValue() == 0) {
-            User user = new User();
-            user.setUsername(u);
-            user.setPassword(encoder.encode(p));
-            entityManager.persist(user);
-            AccountCreationResult acr = new AccountCreationResult();
-            acr.setSuccessful(true);
-            r = new ResponseEntity<>(acr, HttpStatus.OK);
+        if(isUsernameAndPasswordValid(ac)) {
+            return getValidAccountCreationResultResponseEntity(ac);
         }
         else {
-            AccountCreationResult acr = new AccountCreationResult();
-            List<String> errors = new ArrayList<>();
-            if(StringUtils.isEmpty(u) || u.length() < 5) {
-                errors.add("Username must be at least 5 characters");
-            }
-            if(StringUtils.isEmpty(p) || p.length() < 10) {
-                errors.add("Password must be at least 10 characters");
-            }
-            if(count.intValue() > 0) {
-                errors.add("Username already in use.  Please enter another username.");
-            }
-            acr.setErrors(errors);
-            r = new ResponseEntity<>(acr, HttpStatus.UNPROCESSABLE_ENTITY);
+            return getInvalidAccountCreationResultResponseEntity(ac);
         }
-        return r;
+    }
+
+    private ResponseEntity<AccountCreationResult> getInvalidAccountCreationResultResponseEntity(final AccountCredentials ac) {
+        AccountCreationResult acr = new AccountCreationResult();
+        List<String> errors = new ArrayList<>();
+        if(StringUtils.isEmpty(ac.getUsername()) || ac.getUsername().length() < 5) {
+            errors.add("Username must be at least 5 characters");
+        }
+        if(StringUtils.isEmpty(ac.getPassword()) || ac.getPassword().length() < 10) {
+            errors.add("Password must be at least 10 characters");
+        }
+        if(accountService.getIsUserExists(ac)) {
+            errors.add("Username already in use.  Please enter another username.");
+        }
+        acr.setErrors(errors);
+        return new ResponseEntity<>(acr, HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
+    private ResponseEntity<AccountCreationResult> getValidAccountCreationResultResponseEntity(final AccountCredentials ac) {
+        accountService.createUser(ac);
+        AccountCreationResult acr = new AccountCreationResult();
+        acr.setSuccessful(true);
+        return new ResponseEntity<>(acr, HttpStatus.OK);
+    }
+
+    private boolean isUsernameAndPasswordValid(final AccountCredentials ac) {
+        return !StringUtils.isEmpty(ac.getUsername()) && ac.getUsername().length() >= 5
+                && !StringUtils.isEmpty(ac.getPassword()) && ac.getPassword().length() >= 10
+                && !accountService.getIsUserExists(ac);
     }
 
 }

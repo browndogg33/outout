@@ -1,6 +1,7 @@
 package outout.controller;
 
 import org.joda.time.DateTime;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 import outout.model.Suggestion;
+import outout.service.SuggestionService;
 import outout.view.RestaurantSuggestion;
 import outout.view.RestaurantSuggestions;
 
@@ -27,31 +29,31 @@ public class SuggestionController {
     @PersistenceContext
     private EntityManager em;
 
+    @Autowired
+    SuggestionService suggestionService;
+
     @RequestMapping(method = RequestMethod.POST)
     @ResponseBody
     @Transactional
     public ResponseEntity<Void> suggest(@RequestBody RestaurantSuggestion r, Principal p) {
-        Query q = em.createQuery("select s from Suggestion s where s.suggestion = :suggestion " +
-                "and trunc(s.suggestedDate) = trunc(:suggestedDate)");
-        q.setParameter("suggestion", r.getRestaurant());
-        q.setParameter("suggestedDate", DateTime.now().toDate());
-        List<Suggestion> sList = q.getResultList();
-        q = em.createQuery("select s from Suggestion s where trunc(s.suggestedDate) = trunc(:suggestedDate) " +
-                "and s.suggestedBy = :username");
-        q.setParameter("suggestedDate", DateTime.now().toDate());
-        q.setParameter("username", p.getName());
-        List<Suggestion> us = q.getResultList();
-        if(sList.size() == 0 && us.size() < 2) {
-            Suggestion s = new Suggestion();
-            s.setSuggestedBy(p.getName());
-            s.setSuggestion(r.getRestaurant());
-            s.setSuggestedDate(DateTime.now().toDate());
-            em.persist(s);
+        List<Suggestion> suggestionListByRestaurantName = suggestionService.getSuggestionsByRestaurantName(r);
+        List<Suggestion> suggestionListSuggestedByUser = suggestionService.getSuggestionsByUser(p);
+        if(isSuggestionNotBeenMade(suggestionListByRestaurantName)
+                && isUserMadeLessThanMaxSuggestions(suggestionListSuggestedByUser)) {
+            suggestionService.createSuggestion(r, p);
             return new ResponseEntity<>(HttpStatus.OK);
         }
         else {
             return new ResponseEntity<>(HttpStatus.UNPROCESSABLE_ENTITY);
         }
+    }
+
+    private boolean isSuggestionNotBeenMade(final List<Suggestion> suggestionListByRestaurantName) {
+        return suggestionListByRestaurantName.size() == 0;
+    }
+
+    private boolean isUserMadeLessThanMaxSuggestions(final List<Suggestion> suggestionListSuggestedByUser) {
+        return suggestionListSuggestedByUser.size() < 2;
     }
 
     @RequestMapping(method = RequestMethod.GET)
